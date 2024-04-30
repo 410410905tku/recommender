@@ -1,0 +1,81 @@
+try:
+    import mysql.connector
+    import pandas as pd
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    import re
+    #MySQL
+    conn = mysql.connector.connect(
+        host="127.0.0.1",
+        user="root",
+        password="81643895mysql",
+        database="recommender"
+    )
+    #SQL
+    query = "SELECT * FROM merged_data"
+    professor_history = pd.read_sql(query, conn)
+
+    #轉換文本為數值表示
+    vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(1, 2))  
+    tfidf_matrix = vectorizer.fit_transform(professor_history['Sub_Name'])
+
+    #相似度矩陣
+    similarity_matrix = cosine_similarity(tfidf_matrix, dense_output=False)
+
+    #為指定教授進行推薦
+    target_professor = "黃心嘉\nHWANG SHIN-JIA\n116***"
+    target_professor_pattern = re.escape(target_professor)
+    target_records = professor_history[professor_history['Teacher'].str.contains(target_professor_pattern)]
+
+    if not target_records.empty:
+        target_index = target_records.index[0]
+        similarity_scores = similarity_matrix[:, target_index].toarray().flatten()
+        sorted_indices = similarity_scores.argsort()[::-1]
+
+        #紀錄課程(出現過的)
+        recommended_courses = set()
+
+        #紀錄前五名相似度最高的教授名稱
+        similar_professors = []
+
+        for index in sorted_indices[:5]:
+            professor_name = professor_history.iloc[index]['Teacher']
+            similar_professors.append(professor_name)
+            courses_by_professor = professor_history[professor_history['Teacher'] == professor_name]['Sub_Name']
+            
+            #加入並排除目標教授已經教授過的課程
+            for course in courses_by_professor:
+                if course not in professor_history.loc[target_index, 'Sub_Name']:
+                    recommended_courses.add(course)
+
+        print(f"Top 5 similar professors for professor {target_professor}:")
+        for i, professor in enumerate(similar_professors, 1):
+            print(f"{i}. {professor}")
+
+        print(f"\nTop recommended courses for professor {target_professor}:")
+        
+        #計算目標教授與推薦課程的相似度並排序
+        target_courses_tfidf = tfidf_matrix[target_index]
+        course_similarity_scores = cosine_similarity(tfidf_matrix, target_courses_tfidf)
+        sorted_course_indices = course_similarity_scores.flatten().argsort()[::-1]
+
+        #限制前10個
+        output_count = 0
+        for index in sorted_course_indices:
+            if output_count >= 10:
+                break
+            course_name = professor_history.iloc[index]['Sub_Name']
+            if course_name in recommended_courses:
+                print(f"{course_name}")
+                recommended_courses.remove(course_name)  
+                output_count += 1
+
+    else:
+        print(f"No records found for professor {target_professor}")
+
+except Exception as e:
+    print("An error occurred:", e)
+
+finally:
+    if 'conn' in locals() and conn.is_connected():
+        conn.close()
