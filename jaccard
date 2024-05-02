@@ -1,0 +1,91 @@
+import mysql.connector
+import pandas as pd
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import re
+
+try:
+    conn = mysql.connector.connect(
+        host="127.0.0.1",
+        user="root",
+        password="81643895mysql",
+        database="recommender"
+    )
+
+    #教授歷史課程記錄
+    query = "SELECT * FROM merged_data"
+    professor_history = pd.read_sql(query, conn)
+
+    #輸入指定教授
+    target_professor_chinese_name = input("請輸入教授的中文姓名：")
+
+    #找到符合輸入中文姓名的教授記錄
+    target_professor_pattern = re.escape(target_professor_chinese_name)
+    target_records = professor_history[professor_history['Teacher'].str.contains(target_professor_pattern)]
+
+    if not target_records.empty:
+        
+        target_courses = set(target_records['Sub_Name'])
+        
+        #轉換課程名稱為數值表示
+        vectorizer = CountVectorizer(stop_words='english', ngram_range=(1, 2))  
+        tf_matrix = vectorizer.fit_transform(professor_history['Sub_Name'])
+
+        #調整 TF 權重，將非零元素設為1
+        tf_matrix[tf_matrix > 1] = 1
+
+        #計算Jaccard相似度
+        jaccard_similarity = cosine_similarity(tf_matrix, dense_output=False)
+
+        #計算目標教授與其他教授的相似度並排序
+        similarity_scores = jaccard_similarity[:, target_records.index[0]].toarray().flatten()
+        sorted_indices = similarity_scores.argsort()[::-1]
+
+        #紀錄相似教授
+        similar_professors = []
+
+        #紀錄課程(出現過的)
+        recommended_courses = set()
+
+        #選取前10名相似教授
+        top_similar_professors_count = 10
+        for index in sorted_indices:
+            if len(similar_professors) >= top_similar_professors_count:
+                break
+            if index != target_records.index[0]:  #排除指定教授本身
+                similar_professor_name = professor_history.iloc[index]['Teacher']
+                if similar_professor_name not in similar_professors:
+                    similar_professors.append(similar_professor_name)
+
+        #輸出前10名相似教授的名字
+        print(f"\nTop 10 similar professors for professor {target_professor_chinese_name}:")
+        for professor_name in similar_professors:
+            print(professor_name)
+
+        #輸出推薦課程
+        print(f"\nTop recommended courses for professor {target_professor_chinese_name}:")
+        
+        #前10個
+        output_count = 0
+        for index in sorted_indices:
+            if output_count >= 10:
+                break
+            course_name = professor_history.iloc[index]['Sub_Name']
+            if course_name not in target_courses and course_name not in recommended_courses:
+                #檢查推薦課程與指定教授的歷史課程的相似度
+                course_similarity_score = similarity_scores[index]
+                if course_similarity_score > 0.1:  #設定相似度閾值
+                    chinese_course_name = professor_history.iloc[index]['Sub_Name']
+                    print(f"{chinese_course_name} (相似度: {course_similarity_score})")
+                    recommended_courses.add(course_name)
+                    output_count += 1
+
+    else:
+        print(f"找不到教授 {target_professor_chinese_name} 的歷史記錄")
+
+except Exception as e:
+    print("發生錯誤：", e)
+
+finally:
+    if 'conn' in locals() and conn.is_connected():
+        conn.close()
