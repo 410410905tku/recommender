@@ -61,7 +61,7 @@ while True:
     nextpagebut = driver.find_element(By.NAME, 'Button4')                                                  #頁面最下方的 '下一頁' 按鈕
     if nextpagebut.get_attribute('disabled'):                                                              #如果'下一頁'按鈕無法互動
         print('end')
-        with open('d:\engineer\Project\worm\LIST\s1052.csv','a',encoding='utf-8') as f:                    #開啟檔案並將資料存入
+        with open('d:\engineer\Project\worm\LIST\s1122.csv','a',encoding='utf-8') as f:                    #開啟檔案並將資料存入
             json.dump(lists,f,indent=2,sort_keys=True,ensure_ascii=False)
         break
     else:
